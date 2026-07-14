@@ -1,15 +1,17 @@
 # TODO: Split this file into multiple files and move under utils directory.
 from __future__ import annotations
 
+import contextvars
 import inspect
 import json
 import logging
 import uuid
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import fields, is_dataclass
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Generator
+from typing import TYPE_CHECKING, Any, Callable, Generator, Iterable, Iterator, TypeVar
 
 import pydantic
 from opentelemetry import trace as trace_api
@@ -40,6 +42,28 @@ if TYPE_CHECKING:
     from mlflow.entities import LiveSpan, Trace
     from mlflow.pyfunc.context import Context
     from mlflow.types.chat import ChatTool
+
+
+_T = TypeVar("_T")
+_R = TypeVar("_R")
+
+
+def map_with_context(
+    executor: ThreadPoolExecutor,
+    fn: Callable[[_T], _R],
+    iterable: Iterable[_T],
+) -> Iterator[_R]:
+    """``executor.map(fn, iterable)`` that preserves the caller's ``contextvars``.
+
+    Each call runs inside a copy of the submitting thread's context, so
+    ``ContextVar`` values set by the caller are visible in the worker threads.
+    A separate copy is used per item because a single ``Context`` cannot be
+    entered by more than one thread at a time, so sharing one copy across the
+    pool workers would raise ``RuntimeError`` under concurrency.
+    """
+    items = list(iterable)
+    contexts = [contextvars.copy_context() for _ in items]
+    return executor.map(lambda item, ctx: ctx.run(fn, item), items, contexts)
 
 
 def capture_function_input_args(func, args, kwargs) -> dict[str, Any] | None:

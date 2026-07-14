@@ -49,6 +49,7 @@ from mlflow.tracing.utils import (
     encode_span_id,
     exclude_immutable_tags,
     get_otel_attribute,
+    map_with_context,
 )
 from mlflow.tracing.utils.search import traces_to_df
 from mlflow.utils import get_results_from_paginated_fn
@@ -1285,7 +1286,7 @@ def search_sessions(
         max_workers=max_workers,
         thread_name_prefix="search_sessions",
     ) as executor:
-        session_results = list(executor.map(fetch_session_traces, session_ids))
+        session_results = list(map_with_context(executor, fetch_session_traces, session_ids))
 
     # Filter out empty sessions, wrap in Session objects, and preserve order
     sessions: list[Session] = [Session(s) for s in session_results if s]
